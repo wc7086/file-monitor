@@ -127,8 +127,7 @@ max_parallel_tasks = 2
 recording_message = "正在录制"
 not_recording_message = "未录制"
 "#,
-            safe_path,
-            mode
+            safe_path, mode
         );
 
         let config_path = test_path.join(format!("test_config_{}.toml", mode));
@@ -330,8 +329,7 @@ time_type = "{}"
 recording_message = "正在录制"
 not_recording_message = "未录制"
 "#,
-            safe_path,
-            time_type
+            safe_path, time_type
         );
 
         let config_path = test_path.join(format!("test_config_time_{}.toml", time_type));
