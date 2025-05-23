@@ -104,7 +104,8 @@ jobs:
         sudo apt-get update
         sudo apt-get install -y musl-tools
         if [[ "${{ matrix.target }}" == "aarch64-unknown-linux-gnu" ]]; then
-          sudo apt-get install -y gcc-aarch64-linux-gnu
+          # 安装 ARM64 交叉编译工具链（包含 gcc 和 binutils）
+          sudo apt-get install -y gcc-aarch64-linux-gnu binutils-aarch64-linux-gnu
         fi
 
     # 为 ARM 目标设置链接器
@@ -122,10 +123,30 @@ jobs:
       run: |
         cd target/${{ matrix.target }}/release
         if [[ "${{ matrix.os }}" == "windows-latest" ]]; then
+          # Windows 不需要 strip
           cp ${{ matrix.artifact_name }} ${{ matrix.asset_name }}
         else
           cp ${{ matrix.artifact_name }} ${{ matrix.asset_name }}
-          strip ${{ matrix.asset_name }}
+          
+          # 根据目标架构选择正确的 strip 工具
+          case "${{ matrix.target }}" in
+            "aarch64-unknown-linux-gnu")
+              # ARM64 Linux 使用交叉编译工具链的 strip
+              if command -v aarch64-linux-gnu-strip &> /dev/null; then
+                aarch64-linux-gnu-strip ${{ matrix.asset_name }}
+              else
+                echo "⚠️ aarch64-linux-gnu-strip not found, skipping strip for ARM64"
+              fi
+              ;;
+            "x86_64-unknown-linux-musl")
+              # musl 目标可能需要特殊处理，但通常系统 strip 可以工作
+              strip ${{ matrix.asset_name }} || echo "⚠️ strip failed for musl target, continuing..."
+              ;;
+            *)
+              # 其他 Linux 目标使用系统 strip
+              strip ${{ matrix.asset_name }}
+              ;;
+          esac
         fi
 
     - name: 📤 Upload binary artifact
