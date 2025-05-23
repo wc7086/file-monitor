@@ -503,9 +503,9 @@ jobs:
         echo "Release 目录内容:"
         ls -la release/
         echo "查找压缩包文件:"
-        find release/ -name "*.tar.gz" -o -name "*.zip" 2>/dev/null | head -20 || true
+        find release/ -name "*.tar.gz" -o -name "*.zip" 2>/dev/null
         echo "文件权限检查:"
-        find release/ -type f -ls 2>/dev/null | head -20 || true
+        find release/ -type f -ls 2>/dev/null
         echo "=========================="
 
     - name: 📝 Extract version from tag
