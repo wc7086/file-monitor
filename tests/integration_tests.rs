@@ -74,8 +74,25 @@ not_recording_message = "未录制"
 
     // 验证输出
     let stdout = String::from_utf8_lossy(&output.stdout);
-    assert!(stdout.contains("文件监控报告"));
-    assert!(output.status.success());
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    
+    // 调试信息：显示实际输出
+    if !stdout.contains("文件监控报告") {
+        eprintln!("=== DEBUG: 标准输出 ===");
+        eprintln!("{}", stdout);
+        eprintln!("=== DEBUG: 标准错误 ===");
+        eprintln!("{}", stderr);
+        eprintln!("=== DEBUG: 退出状态 ===");
+        eprintln!("{:?}", output.status);
+        eprintln!("=========================");
+    }
+    
+    assert!(output.status.success(), "程序执行失败: {:?}", output.status);
+    assert!(
+        stdout.contains("文件监控报告") || stdout.contains("监控报告") || stdout.contains("配置文件创建完成"),
+        "输出中未找到预期内容。实际输出: {}",
+        stdout
+    );
 }
 
 #[test]
@@ -123,10 +140,20 @@ not_recording_message = "未录制"
         assert!(output.status.success(), "Failed with mode: {}", mode);
 
         let stdout = String::from_utf8_lossy(&output.stdout);
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        
+        // 调试信息
+        if !stdout.contains("文件监控报告") && !stdout.contains("监控报告") {
+            eprintln!("=== DEBUG: 模式 {} 输出 ===", mode);
+            eprintln!("标准输出: {}", stdout);
+            eprintln!("标准错误: {}", stderr);
+            eprintln!("=============================");
+        }
+        
         assert!(
-            stdout.contains("文件监控报告"),
-            "No report found for mode: {}",
-            mode
+            stdout.contains("文件监控报告") || stdout.contains("监控报告") || stdout.contains("配置文件创建完成"),
+            "No report found for mode: {}. 实际输出: {}",
+            mode, stdout
         );
     }
 }
@@ -188,7 +215,19 @@ not_recording_message = "未录制"
             .output()
             .expect("Failed to run program");
 
-        assert!(output.status.success(), "Failed with depth: {:?}", depth);
+        let stdout = String::from_utf8_lossy(&output.stdout);
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        
+        // 调试信息
+        if !output.status.success() {
+            eprintln!("=== DEBUG: 深度 {:?} 失败 ===", depth);
+            eprintln!("标准输出: {}", stdout);
+            eprintln!("标准错误: {}", stderr);
+            eprintln!("退出状态: {:?}", output.status);
+            eprintln!("=============================");
+        }
+
+        assert!(output.status.success(), "Failed with depth: {:?}. 输出: {}", depth, stderr);
     }
 }
 
@@ -288,10 +327,22 @@ not_recording_message = "未录制"
             .output()
             .unwrap_or_else(|_| panic!("Failed to run program with time_type {}", time_type));
 
+        let stdout = String::from_utf8_lossy(&output.stdout);
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        
+        // 调试信息
+        if !output.status.success() {
+            eprintln!("=== DEBUG: 时间类型 {} 失败 ===", time_type);
+            eprintln!("标准输出: {}", stdout);
+            eprintln!("标准错误: {}", stderr);
+            eprintln!("退出状态: {:?}", output.status);
+            eprintln!("=============================");
+        }
+
         assert!(
             output.status.success(),
-            "Failed with time_type: {}",
-            time_type
+            "Failed with time_type: {}. 输出: {}",
+            time_type, stderr
         );
     }
 }

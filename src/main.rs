@@ -429,6 +429,9 @@ async fn check_and_report(config: &Config) -> Result<()> {
     if !root_path.exists() {
         error!("监控目录不存在: {}", config.monitor.root_path);
         error!("请检查配置文件中的 root_path 设置");
+        // 仍然输出报告，显示空结果
+        let empty_status = HashMap::new();
+        print_status_report(&empty_status, config);
         return Ok(());
     }
 
@@ -436,6 +439,9 @@ async fn check_and_report(config: &Config) -> Result<()> {
     let start_time = Instant::now();
     if let Err(e) = fs::read_dir(root_path) {
         error!("无法读取监控目录: {}", e);
+        // 仍然输出报告，显示空结果
+        let empty_status = HashMap::new();
+        print_status_report(&empty_status, config);
         return Ok(());
     }
     let read_duration = start_time.elapsed();
@@ -456,7 +462,7 @@ async fn check_and_report(config: &Config) -> Result<()> {
     // 获取所有二级目录及其新文件状态
     let subdirs_status = check_subdirectories_async(root_path, threshold_time, config).await?;
 
-    // 输出结果
+    // 总是输出结果
     print_status_report(&subdirs_status, config);
 
     Ok(())
