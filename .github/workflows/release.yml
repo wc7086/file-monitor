@@ -118,11 +118,48 @@ jobs:
     - name: 🔗 Configure cross-compilation
       if: matrix.target == 'aarch64-unknown-linux-gnu'
       run: |
+        echo "配置 ARM64 交叉编译..."
+        mkdir -p ~/.cargo
         echo '[target.aarch64-unknown-linux-gnu]' >> ~/.cargo/config.toml
         echo 'linker = "aarch64-linux-gnu-gcc"' >> ~/.cargo/config.toml
+        echo "配置文件内容:"
+        cat ~/.cargo/config.toml
+        echo "验证工具链:"
+        which aarch64-linux-gnu-gcc || echo "⚠️ ARM64 编译器未找到"
+        aarch64-linux-gnu-gcc --version || echo "⚠️ ARM64 编译器版本检查失败"
+
+    # 为 musl 目标设置配置
+    - name: 🔗 Configure musl target
+      if: matrix.target == 'x86_64-unknown-linux-musl'
+      run: |
+        echo "配置 musl 静态链接..."
+        mkdir -p ~/.cargo
+        echo '[target.x86_64-unknown-linux-musl]' >> ~/.cargo/config.toml
+        echo 'rustflags = ["-C", "target-feature=+crt-static"]' >> ~/.cargo/config.toml
+        echo "配置文件内容:"
+        cat ~/.cargo/config.toml
 
     - name: 🔨 Build release binary
-      run: cargo build --release --target ${{ matrix.target }} --verbose
+      run: |
+        echo "开始构建目标: ${{ matrix.target }}"
+        echo "Rust 版本:"
+        rustc --version
+        echo "Cargo 版本:"
+        cargo --version
+        echo "目标列表:"
+        rustup target list --installed
+        echo ""
+        
+        # 确保目标已安装
+        rustup target add ${{ matrix.target }}
+        
+        # 开始构建
+        echo "执行构建命令: cargo build --release --target ${{ matrix.target }} --verbose"
+        if ! cargo build --release --target ${{ matrix.target }} --verbose; then
+          echo "❌ 构建失败，尝试清理并重试..."
+          cargo clean
+          cargo build --release --target ${{ matrix.target }} --verbose
+        fi
 
     - name: 📦 Prepare binary
       shell: bash
@@ -162,6 +199,20 @@ jobs:
         path: target/${{ matrix.target }}/release/${{ matrix.asset_name }}
         retention-days: 1
 
+    - name: 🔍 Debug build output
+      if: always()
+      shell: bash
+      run: |
+        echo "=== 构建调试信息 ==="
+        echo "目标: ${{ matrix.target }}"
+        echo "构建目录内容:"
+        ls -la target/${{ matrix.target }}/release/ || echo "构建目录不存在"
+        echo "查找二进制文件:"
+        find target/${{ matrix.target }}/release/ -name "${{ matrix.artifact_name }}" -o -name "${{ matrix.asset_name }}" 2>/dev/null || echo "未找到预期文件"
+        echo "所有文件列表:"
+        find target/${{ matrix.target }}/release/ -type f 2>/dev/null || echo "无文件"
+        echo "==================="
+
   # 📦 创建发布包
   create-release-assets:
     name: 📦 Create Release Assets
@@ -186,6 +237,17 @@ jobs:
         echo "当前目录: $(pwd)"
         echo "artifacts 目录内容:"
         ls -la artifacts/
+        echo ""
+        echo "各个平台构件详情:"
+        for dir in artifacts/*/; do
+          if [ -d "$dir" ]; then
+            echo "📁 $(basename "$dir"):"
+            ls -la "$dir"
+            echo "文件类型检查:"
+            find "$dir" -type f -exec file {} \;
+            echo "---"
+          fi
+        done
         echo "==============="
         
         cd artifacts
@@ -196,8 +258,27 @@ jobs:
             echo "目录内容:"
             ls -la "$dir"
             
-            # 查找二进制文件（更宽松的匹配）
-            binary_file=$(find "$dir" -type f \( -name "*.exe" -o -perm -111 \) | head -1)
+            # 查找二进制文件（改进匹配逻辑）
+            binary_file=""
+            
+            # 首先尝试按照文件名匹配
+            if [[ "$binary_name" == *"windows"* ]]; then
+              # Windows 平台查找 .exe 文件
+              binary_file=$(find "$dir" -name "*.exe" -type f | head -1)
+            else
+              # Linux/macOS 平台查找特定名称的文件
+              # 先尝试精确匹配
+              if [[ -f "$dir/$binary_name" ]]; then
+                binary_file="$dir/$binary_name"
+              elif [[ -f "$dir/file_monitor" ]]; then
+                binary_file="$dir/file_monitor"
+              else
+                # 查找所有文件，排除已知的非二进制文件
+                binary_file=$(find "$dir" -type f ! -name "*.txt" ! -name "*.md" ! -name "*.toml" ! -name "*.json" | head -1)
+              fi
+            fi
+            
+            echo "检测到的二进制文件: $binary_file"
             
             if [[ -f "$binary_file" ]]; then
               echo "📦 打包 $binary_name (文件: $binary_file)"
