@@ -106,6 +106,7 @@ jobs:
     # Linux 特殊依赖
     - name: 🔧 Install Linux dependencies
       if: matrix.os == 'ubuntu-latest'
+      shell: bash
       run: |
         sudo apt-get update
         sudo apt-get install -y musl-tools
@@ -117,6 +118,7 @@ jobs:
     # 为 ARM 目标设置链接器
     - name: 🔗 Configure cross-compilation
       if: matrix.target == 'aarch64-unknown-linux-gnu'
+      shell: bash
       run: |
         echo "配置 ARM64 交叉编译..."
         mkdir -p ~/.cargo
@@ -131,6 +133,7 @@ jobs:
     # 为 musl 目标设置配置
     - name: 🔗 Configure musl target
       if: matrix.target == 'x86_64-unknown-linux-musl'
+      shell: bash
       run: |
         echo "配置 musl 静态链接..."
         mkdir -p ~/.cargo
@@ -141,6 +144,7 @@ jobs:
 
     # 清理和准备 Rust 目标
     - name: 🧹 Prepare Rust target
+      shell: bash
       run: |
         echo "准备 Rust 目标: ${{ matrix.target }}"
         
@@ -182,6 +186,7 @@ jobs:
         done
 
     - name: 🔨 Build release binary
+      shell: bash
       run: |
         echo "开始构建目标: ${{ matrix.target }}"
         echo "Rust 版本:"
@@ -278,6 +283,7 @@ jobs:
       run: mkdir -p release
 
     - name: 🎁 Package binaries
+      shell: bash
       run: |
         echo "=== 调试信息 ==="
         echo "当前目录: $(pwd)"
@@ -393,6 +399,7 @@ jobs:
         echo "=========================="
 
     - name: 📊 Generate checksums
+      shell: bash
       run: |
         cd release
         echo "生成校验和文件..."
@@ -440,6 +447,7 @@ jobs:
         path: release
 
     - name: 🔍 Debug release files
+      shell: bash
       run: |
         echo "=== Release 目录调试信息 ==="
         echo "当前目录: $(pwd)"
@@ -453,6 +461,7 @@ jobs:
 
     - name: 📝 Extract version from tag
       id: version
+      shell: bash
       run: |
         VERSION=${GITHUB_REF#refs/tags/}
         echo "version=$VERSION" >> $GITHUB_OUTPUT
@@ -460,6 +469,7 @@ jobs:
 
     - name: 📄 Generate release notes
       id: release_notes
+      shell: bash
       run: |
         cat > release_notes.md << 'EOF'
         ## 🎉 File Monitor ${{ steps.version.outputs.version }}
@@ -595,6 +605,7 @@ jobs:
           type=semver,pattern={{major}}
 
     - name: 📝 Create Dockerfile
+      shell: bash
       run: |
         cat > Dockerfile << 'EOF'
         FROM alpine:latest
