@@ -16,20 +16,23 @@ allow = [
     "BSD-3-Clause",
     "ISC",
     "Unicode-DFS-2016",
+    "Unicode-3.0",
 ]
 # 信心度阈值
 confidence-threshold = 0.8
 
 [bans]
-# 禁止的 crate
+# 禁止的 crate（只列出我们明确不想要的）
 deny = [
     # 使用过时或不安全的 crates
     { name = "openssl", version = "*" },
 ]
+
+# 允许重复依赖的策略
+multiple-versions = "warn"  # 警告但不失败
+
 # 跳过树检查
-skip-tree = [
-    # 某些 crates 可能有复杂的依赖关系
-]
+skip-tree = []
 
 [advisories]
 # 数据库 URL
