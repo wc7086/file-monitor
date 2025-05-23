@@ -62,16 +62,40 @@ jobs:
       with:
         targets: ${{ matrix.target }}
 
-    - name: 📦 Cache Cargo dependencies
+    - name: 📦 Cache Rust toolchain
       uses: actions/cache@v4
       with:
         path: |
-          ~/.cargo/bin/
+          ~/.rustup/toolchains
+          ~/.rustup/update-hashes
+          ~/.rustup/settings.toml
+        key: ${{ runner.os }}-rustup-stable-${{ matrix.target }}-${{ hashFiles('rust-toolchain.toml', 'rust-toolchain') }}
+        restore-keys: |
+          ${{ runner.os }}-rustup-stable-${{ matrix.target }}-
+          ${{ runner.os }}-rustup-stable-
+          ${{ runner.os }}-rustup-
+
+    - name: 📦 Cache Cargo registry and index
+      uses: actions/cache@v4
+      with:
+        path: |
           ~/.cargo/registry/index/
           ~/.cargo/registry/cache/
           ~/.cargo/git/db/
-          target/
-        key: ${{ runner.os }}-cargo-release-${{ matrix.target }}-${{ hashFiles('**/Cargo.lock') }}
+        key: ${{ runner.os }}-cargo-registry-${{ hashFiles('**/Cargo.lock') }}
+        restore-keys: |
+          ${{ runner.os }}-cargo-registry-
+
+    - name: 📦 Cache Cargo target directory
+      uses: actions/cache@v4
+      with:
+        path: target/
+        key: ${{ runner.os }}-cargo-target-release-${{ matrix.target }}-${{ hashFiles('**/Cargo.lock') }}-${{ hashFiles('**/*.rs') }}
+        restore-keys: |
+          ${{ runner.os }}-cargo-target-release-${{ matrix.target }}-${{ hashFiles('**/Cargo.lock') }}-
+          ${{ runner.os }}-cargo-target-release-${{ matrix.target }}-
+          ${{ runner.os }}-cargo-target-release-
+          ${{ runner.os }}-cargo-target-
 
     # Linux 特殊依赖
     - name: 🔧 Install Linux dependencies
@@ -289,15 +313,26 @@ jobs:
     - name: 🦀 Install Rust toolchain
       uses: dtolnay/rust-toolchain@stable
 
-    - name: 📦 Cache Cargo dependencies
+    - name: 📦 Cache Cargo registry and index
       uses: actions/cache@v4
       with:
         path: |
-          ~/.cargo/bin/
           ~/.cargo/registry/index/
           ~/.cargo/registry/cache/
-          target/
-        key: ubuntu-latest-cargo-publish-${{ hashFiles('**/Cargo.lock') }}
+          ~/.cargo/git/db/
+        key: ubuntu-latest-cargo-registry-${{ hashFiles('**/Cargo.lock') }}
+        restore-keys: |
+          ubuntu-latest-cargo-registry-
+
+    - name: 📦 Cache Cargo target directory
+      uses: actions/cache@v4
+      with:
+        path: target/
+        key: ubuntu-latest-cargo-target-publish-${{ hashFiles('**/Cargo.lock') }}-${{ hashFiles('**/*.rs') }}
+        restore-keys: |
+          ubuntu-latest-cargo-target-publish-${{ hashFiles('**/Cargo.lock') }}-
+          ubuntu-latest-cargo-target-publish-
+          ubuntu-latest-cargo-target-
 
     - name: 🔍 Verify package
       run: cargo package --verbose
