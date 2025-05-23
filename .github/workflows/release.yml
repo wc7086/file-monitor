@@ -7,6 +7,12 @@ on:
     tags:
       - 'v*'
 
+# 添加必要的权限
+permissions:
+  contents: write
+  packages: write
+  id-token: write
+
 env:
   CARGO_TERM_COLOR: always
   RUST_BACKTRACE: 1
@@ -176,27 +182,49 @@ jobs:
 
     - name: 🎁 Package binaries
       run: |
+        echo "=== 调试信息 ==="
+        echo "当前目录: $(pwd)"
+        echo "artifacts 目录内容:"
+        ls -la artifacts/
+        echo "==============="
+        
         cd artifacts
         for dir in */; do
-          binary_name=$(basename "$dir")
-          binary_file=$(find "$dir" -type f -executable -o -name "*.exe" | head -1)
-          
-          if [[ -f "$binary_file" ]]; then
-            echo "📦 打包 $binary_name"
+          if [ -d "$dir" ]; then
+            binary_name=$(basename "$dir")
+            echo "处理目录: $binary_name"
+            echo "目录内容:"
+            ls -la "$dir"
             
-            # 创建包目录
-            package_dir="../release/${binary_name}"
-            mkdir -p "$package_dir"
+            # 查找二进制文件（更宽松的匹配）
+            binary_file=$(find "$dir" -type f \( -name "*.exe" -o -perm -111 \) | head -1)
             
-            # 复制二进制文件
-            cp "$binary_file" "$package_dir/"
-            
-            # 添加文档文件
-            cp ../README.md "$package_dir/" 2>/dev/null || echo "# File Monitor" > "$package_dir/README.md"
-            cp ../LICENSE* "$package_dir/" 2>/dev/null || echo "MIT License" > "$package_dir/LICENSE"
-            
-            # 创建示例配置文件
-            cat > "$package_dir/config.example.toml" << 'EOF'
+            if [[ -f "$binary_file" ]]; then
+              echo "📦 打包 $binary_name (文件: $binary_file)"
+              
+              # 创建包目录
+              package_dir="../release/${binary_name}"
+              mkdir -p "$package_dir"
+              
+              # 复制二进制文件，保持可执行权限
+              cp "$binary_file" "$package_dir/"
+              chmod +x "$package_dir"/*
+              
+              # 添加文档文件
+              if [ -f "../README.md" ]; then
+                cp ../README.md "$package_dir/"
+              else
+                echo "# File Monitor" > "$package_dir/README.md"
+              fi
+              
+              if ls ../LICENSE* >/dev/null 2>&1; then
+                cp ../LICENSE* "$package_dir/"
+              else
+                echo "MIT License" > "$package_dir/LICENSE"
+              fi
+              
+              # 创建示例配置文件
+              cat > "$package_dir/config.example.toml" << 'EOF'
         # 文件监控配置示例
         [monitor]
         # 监控的根目录路径
@@ -214,24 +242,51 @@ jobs:
         # 没有新文件时的提示信息
         not_recording_message = "未录制"
         EOF
-            
-            # 创建压缩包
-            if [[ "$binary_name" == *"windows"* ]]; then
+              
+              # 创建压缩包
               cd "../release"
-              zip -r "${binary_name}.zip" "${binary_name}/"
+              if [[ "$binary_name" == *"windows"* ]]; then
+                echo "创建 ZIP 压缩包: ${binary_name}.zip"
+                zip -r "${binary_name}.zip" "${binary_name}/"
+              else
+                echo "创建 TAR.GZ 压缩包: ${binary_name}.tar.gz"
+                tar -czf "${binary_name}.tar.gz" "${binary_name}/"
+              fi
               cd "../artifacts"
             else
-              cd "../release"
-              tar -czf "${binary_name}.tar.gz" "${binary_name}/"
-              cd "../artifacts"
+              echo "⚠️ 在目录 $binary_name 中找不到可执行文件"
+              echo "目录内容详情:"
+              find "$dir" -type f -ls
             fi
           fi
         done
+        
+        echo "=== 最终 release 目录内容 ==="
+        ls -la ../release/
+        echo "=========================="
 
     - name: 📊 Generate checksums
       run: |
         cd release
-        sha256sum *.tar.gz *.zip > checksums.txt 2>/dev/null || true
+        echo "生成校验和文件..."
+        ls -la
+        
+        # 只为存在的文件生成校验和
+        if ls *.tar.gz >/dev/null 2>&1 || ls *.zip >/dev/null 2>&1; then
+          sha256sum *.tar.gz *.zip > checksums.txt 2>/dev/null || {
+            # 如果上面失败，分别处理不同类型的文件
+            (ls *.tar.gz >/dev/null 2>&1 && sha256sum *.tar.gz > checksums.txt) || true
+            (ls *.zip >/dev/null 2>&1 && sha256sum *.zip >> checksums.txt) || true
+          }
+          echo "校验和文件内容:"
+          cat checksums.txt
+        else
+          echo "⚠️ 没有找到压缩包文件"
+          echo "当前目录内容:"
+          ls -la
+          # 创建空的 checksums 文件以避免后续步骤失败
+          touch checksums.txt
+        fi
 
     - name: 📤 Upload release assets
       uses: actions/upload-artifact@v4
@@ -256,6 +311,18 @@ jobs:
       with:
         name: release-packages
         path: release
+
+    - name: 🔍 Debug release files
+      run: |
+        echo "=== Release 目录调试信息 ==="
+        echo "当前目录: $(pwd)"
+        echo "Release 目录内容:"
+        ls -la release/
+        echo "查找压缩包文件:"
+        find release/ -name "*.tar.gz" -o -name "*.zip" | head -20
+        echo "文件权限检查:"
+        find release/ -type f -ls | head -20
+        echo "=========================="
 
     - name: 📝 Extract version from tag
       id: version
