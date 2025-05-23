@@ -1,0 +1,48 @@
+# cargo-deny 配置文件
+[graph]
+targets = [
+    { triple = "x86_64-unknown-linux-gnu" },
+    { triple = "x86_64-pc-windows-msvc" },
+    { triple = "x86_64-apple-darwin" },
+]
+
+[licenses]
+# 允许的许可证
+allow = [
+    "MIT",
+    "Apache-2.0",
+    "Apache-2.0 WITH LLVM-exception",
+    "BSD-2-Clause",
+    "BSD-3-Clause",
+    "ISC",
+    "Unicode-DFS-2016",
+]
+# 信心度阈值
+confidence-threshold = 0.8
+
+[bans]
+# 禁止的 crate
+deny = [
+    # 使用过时或不安全的 crates
+    { name = "openssl", version = "*" },
+]
+# 跳过树检查
+skip-tree = [
+    # 某些 crates 可能有复杂的依赖关系
+]
+
+[advisories]
+# 数据库 URL
+db-path = "~/.cargo/advisory-db"
+# 数据库 URL
+db-urls = ["https://github.com/rustsec/advisory-db"]
+# 忽略的漏洞
+ignore = [
+    # 添加需要暂时忽略的漏洞 ID
+]
+
+[sources]
+# 允许的注册表
+allow-registry = ["https://github.com/rust-lang/crates.io-index"]
+# 允许的 Git 仓库
+allow-git = [] 
