@@ -476,10 +476,7 @@ async fn check_subdirectories_async(
     let mut status_map = HashMap::new();
 
     // 确定并行模式
-    let parallel_mode = config
-        .monitor
-        .parallel_mode.as_deref()
-        .unwrap_or("sync");
+    let parallel_mode = config.monitor.parallel_mode.as_deref().unwrap_or("sync");
 
     let max_tasks = config
         .monitor

@@ -75,7 +75,7 @@ not_recording_message = "未录制"
     // 验证输出
     let stdout = String::from_utf8_lossy(&output.stdout);
     let stderr = String::from_utf8_lossy(&output.stderr);
-    
+
     // 调试信息：显示实际输出
     if !stdout.contains("文件监控报告") {
         eprintln!("=== DEBUG: 标准输出 ===");
@@ -86,10 +86,12 @@ not_recording_message = "未录制"
         eprintln!("{:?}", output.status);
         eprintln!("=========================");
     }
-    
+
     assert!(output.status.success(), "程序执行失败: {:?}", output.status);
     assert!(
-        stdout.contains("文件监控报告") || stdout.contains("监控报告") || stdout.contains("配置文件创建完成"),
+        stdout.contains("文件监控报告")
+            || stdout.contains("监控报告")
+            || stdout.contains("配置文件创建完成"),
         "输出中未找到预期内容。实际输出: {}",
         stdout
     );
@@ -141,7 +143,7 @@ not_recording_message = "未录制"
 
         let stdout = String::from_utf8_lossy(&output.stdout);
         let stderr = String::from_utf8_lossy(&output.stderr);
-        
+
         // 调试信息
         if !stdout.contains("文件监控报告") && !stdout.contains("监控报告") {
             eprintln!("=== DEBUG: 模式 {} 输出 ===", mode);
@@ -149,11 +151,14 @@ not_recording_message = "未录制"
             eprintln!("标准错误: {}", stderr);
             eprintln!("=============================");
         }
-        
+
         assert!(
-            stdout.contains("文件监控报告") || stdout.contains("监控报告") || stdout.contains("配置文件创建完成"),
+            stdout.contains("文件监控报告")
+                || stdout.contains("监控报告")
+                || stdout.contains("配置文件创建完成"),
             "No report found for mode: {}. 实际输出: {}",
-            mode, stdout
+            mode,
+            stdout
         );
     }
 }
@@ -172,8 +177,7 @@ fn test_deep_directory_structure() {
         // 在每隔一层创建文件
         if i % 2 == 0 {
             let file_path = current_path.join(format!("deep_file_{}.txt", i));
-            fs::write(&file_path, format!("Content at level {}", i))
-                .expect("Failed to write file");
+            fs::write(&file_path, format!("Content at level {}", i)).expect("Failed to write file");
         }
     }
 
@@ -217,7 +221,7 @@ not_recording_message = "未录制"
 
         let stdout = String::from_utf8_lossy(&output.stdout);
         let stderr = String::from_utf8_lossy(&output.stderr);
-        
+
         // 调试信息
         if !output.status.success() {
             eprintln!("=== DEBUG: 深度 {:?} 失败 ===", depth);
@@ -227,7 +231,12 @@ not_recording_message = "未录制"
             eprintln!("=============================");
         }
 
-        assert!(output.status.success(), "Failed with depth: {:?}. 输出: {}", depth, stderr);
+        assert!(
+            output.status.success(),
+            "Failed with depth: {:?}. 输出: {}",
+            depth,
+            stderr
+        );
     }
 }
 
@@ -329,7 +338,7 @@ not_recording_message = "未录制"
 
         let stdout = String::from_utf8_lossy(&output.stdout);
         let stderr = String::from_utf8_lossy(&output.stderr);
-        
+
         // 调试信息
         if !output.status.success() {
             eprintln!("=== DEBUG: 时间类型 {} 失败 ===", time_type);
@@ -342,7 +351,8 @@ not_recording_message = "未录制"
         assert!(
             output.status.success(),
             "Failed with time_type: {}. 输出: {}",
-            time_type, stderr
+            time_type,
+            stderr
         );
     }
 }
