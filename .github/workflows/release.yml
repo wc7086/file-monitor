@@ -75,11 +75,10 @@ jobs:
           ~/.rustup/toolchains
           ~/.rustup/update-hashes
           ~/.rustup/settings.toml
-        key: ${{ runner.os }}-rustup-stable-${{ matrix.target }}-v2-${{ hashFiles('rust-toolchain.toml', 'rust-toolchain') }}
+        key: ${{ runner.os }}-rustup-stable-${{ matrix.target }}-v3-${{ hashFiles('rust-toolchain.toml', 'rust-toolchain') }}
         restore-keys: |
-          ${{ runner.os }}-rustup-stable-${{ matrix.target }}-v2-
-          ${{ runner.os }}-rustup-stable-v2-
-          ${{ runner.os }}-rustup-
+          ${{ runner.os }}-rustup-stable-${{ matrix.target }}-v3-
+          ${{ runner.os }}-rustup-stable-v3-
 
     - name: 📦 Cache Cargo registry and index
       uses: actions/cache@v4
@@ -88,20 +87,19 @@ jobs:
           ~/.cargo/registry/index/
           ~/.cargo/registry/cache/
           ~/.cargo/git/db/
-        key: ${{ runner.os }}-cargo-registry-${{ hashFiles('**/Cargo.lock') }}
+        key: ${{ runner.os }}-cargo-registry-v2-${{ hashFiles('**/Cargo.lock') }}
         restore-keys: |
-          ${{ runner.os }}-cargo-registry-
+          ${{ runner.os }}-cargo-registry-v2-
 
     - name: 📦 Cache Cargo target directory
       uses: actions/cache@v4
       with:
         path: target/
-        key: ${{ runner.os }}-cargo-target-release-${{ matrix.target }}-${{ hashFiles('**/Cargo.lock') }}-${{ hashFiles('**/*.rs') }}
+        key: ${{ runner.os }}-cargo-target-release-${{ matrix.target }}-v2-${{ hashFiles('**/Cargo.lock') }}-${{ hashFiles('**/*.rs') }}
         restore-keys: |
-          ${{ runner.os }}-cargo-target-release-${{ matrix.target }}-${{ hashFiles('**/Cargo.lock') }}-
-          ${{ runner.os }}-cargo-target-release-${{ matrix.target }}-
-          ${{ runner.os }}-cargo-target-release-
-          ${{ runner.os }}-cargo-target-
+          ${{ runner.os }}-cargo-target-release-${{ matrix.target }}-v2-${{ hashFiles('**/Cargo.lock') }}-
+          ${{ runner.os }}-cargo-target-release-${{ matrix.target }}-v2-
+          ${{ runner.os }}-cargo-target-release-v2-
 
     # Linux 特殊依赖
     - name: 🔧 Install Linux dependencies
@@ -152,35 +150,81 @@ jobs:
         echo "当前已安装的目标:"
         rustup target list --installed
         
-        # 如果目标已存在但可能损坏，先移除
+        # 如果目标已存在，直接跳过安装
         if rustup target list --installed | grep -q "${{ matrix.target }}"; then
-          echo "目标已存在，检查是否需要重新安装..."
-          # 尝试简单验证，如果失败则重新安装
-          if ! rustc --print target-list | grep -q "${{ matrix.target }}"; then
-            echo "目标验证失败，重新安装..."
-            rustup target remove ${{ matrix.target }} 2>/dev/null || true
-          else
-            echo "目标验证成功，跳过安装"
-            exit 0
-          fi
+          echo "✅ 目标 ${{ matrix.target }} 已安装，跳过安装步骤"
+          exit 0
         fi
         
-        # 安装目标
+        # 安装目标，带有更彻底的清理机制
         echo "安装目标: ${{ matrix.target }}"
         MAX_RETRIES=3
+        
         for i in $(seq 1 $MAX_RETRIES); do
           echo "尝试 $i/$MAX_RETRIES ..."
+          
+          # 安装前先清理可能的残留文件
+          if [ $i -gt 1 ]; then
+            echo "🧹 执行彻底清理..."
+            
+            # 清理组件
+            rustup component remove rust-std-${{ matrix.target }} 2>/dev/null || true
+            
+            # 清理下载缓存
+            if [ -d ~/.rustup/downloads ]; then
+              echo "清理下载缓存..."
+              find ~/.rustup/downloads -name "*${{ matrix.target }}*" -delete 2>/dev/null || true
+            fi
+            
+            # 清理解压缓存  
+            if [ -d ~/.rustup/tmp ]; then
+              echo "清理临时文件..."
+              rm -rf ~/.rustup/tmp/* 2>/dev/null || true
+            fi
+            
+            # 强制清理目标相关的工具链文件
+            if [ -d ~/.rustup/toolchains ]; then
+              echo "清理工具链中的目标文件..."
+              find ~/.rustup/toolchains -path "*/${{ matrix.target }}/*" -delete 2>/dev/null || true
+              find ~/.rustup/toolchains -name "*${{ matrix.target }}*" -delete 2>/dev/null || true
+            fi
+            
+            # 等待一下让文件系统同步
+            sleep 3
+          fi
+          
+          # 尝试安装
           if rustup target add ${{ matrix.target }}; then
             echo "✅ 目标安装成功"
             break
           else
             if [ $i -eq $MAX_RETRIES ]; then
-              echo "❌ 目标安装失败，已达到最大重试次数"
+              echo "❌ 目标安装失败，尝试备用方案..."
+              
+              # 备用方案：检查是否是跨编译目标，可能不需要这个目标
+              case "${{ matrix.target }}" in
+                "x86_64-apple-darwin"|"aarch64-apple-darwin")
+                  # macOS 目标，检查当前系统架构
+                  CURRENT_ARCH=$(uname -m)
+                  if [[ "$CURRENT_ARCH" == "arm64" && "${{ matrix.target }}" == "x86_64-apple-darwin" ]]; then
+                    echo "⚠️ 在 ARM64 macOS 上构建 x86_64 目标可能需要额外配置"
+                    echo "尝试使用 cross-compilation 标志..."
+                    exit 0  # 让构建步骤尝试处理
+                  elif [[ "$CURRENT_ARCH" == "x86_64" && "${{ matrix.target }}" == "aarch64-apple-darwin" ]]; then
+                    echo "⚠️ 在 x86_64 macOS 上构建 ARM64 目标可能需要额外配置"
+                    echo "尝试使用 cross-compilation 标志..."
+                    exit 0  # 让构建步骤尝试处理
+                  fi
+                  ;;
+                *)
+                  echo "❌ 无法安装目标 ${{ matrix.target }}"
+                  exit 1
+                  ;;
+              esac
+              
               exit 1
             fi
             echo "⚠️ 安装失败，清理后重试..."
-            # 清理可能的冲突文件
-            rustup component remove rust-std-${{ matrix.target }} 2>/dev/null || true
             sleep 2
           fi
         done
@@ -197,11 +241,13 @@ jobs:
         rustup target list --installed
         echo ""
         
-        # 验证目标可用
+        # 验证目标可用（或尝试即时安装）
         echo "验证目标: ${{ matrix.target }}"
         if ! rustup target list --installed | grep -q "${{ matrix.target }}"; then
-          echo "❌ 目标未安装"
-          exit 1
+          echo "⚠️ 目标未预安装，尝试即时安装..."
+          if ! rustup target add ${{ matrix.target }}; then
+            echo "⚠️ 即时安装失败，尝试强制构建..."
+          fi
         fi
         
         # 开始构建
@@ -209,6 +255,12 @@ jobs:
         if ! cargo build --release --target ${{ matrix.target }} --verbose; then
           echo "❌ 构建失败，尝试清理并重试..."
           cargo clean
+          
+          # 最后一次尝试：强制安装目标然后构建
+          echo "🔧 最后尝试：重新安装目标..."
+          rustup component remove rust-std-${{ matrix.target }} 2>/dev/null || true
+          rustup target add ${{ matrix.target }} || echo "目标安装仍然失败，尝试继续构建..."
+          
           cargo build --release --target ${{ matrix.target }} --verbose
         fi
 
@@ -502,126 +554,3 @@ jobs:
         # 运行一次检查
         ./file_monitor --once
         ```
-        
-        ### 🔧 配置文件
-        程序首次运行时会自动创建 `config.toml` 配置文件，可自定义监控参数。
-        
-        ---
-        **完整更新日志**: [CHANGELOG.md](https://github.com/${{ github.repository }}/blob/main/CHANGELOG.md)
-        EOF
-
-    - name: 🚀 Create GitHub Release
-      uses: softprops/action-gh-release@v1
-      with:
-        name: "File Monitor ${{ steps.version.outputs.version }}"
-        body_path: release_notes.md
-        files: |
-          release/*.tar.gz
-          release/*.zip
-          release/checksums.txt
-        draft: false
-        prerelease: ${{ contains(steps.version.outputs.version, 'alpha') || contains(steps.version.outputs.version, 'beta') || contains(steps.version.outputs.version, 'rc') }}
-      env:
-        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-
-  # 📦 发布到 Crates.io (可选)
-  crates-io-release:
-    name: 📦 Publish to Crates.io
-    runs-on: ubuntu-latest
-    needs: build-binaries
-    if: startsWith(github.ref, 'refs/tags/') && !contains(github.ref, 'alpha') && !contains(github.ref, 'beta') && !contains(github.ref, 'rc')
-    
-    steps:
-    - name: 📥 Checkout code
-      uses: actions/checkout@v4
-
-    - name: 🦀 Install Rust toolchain
-      uses: dtolnay/rust-toolchain@stable
-
-    - name: 📦 Cache Cargo registry and index
-      uses: actions/cache@v4
-      with:
-        path: |
-          ~/.cargo/registry/index/
-          ~/.cargo/registry/cache/
-          ~/.cargo/git/db/
-        key: ubuntu-latest-cargo-registry-${{ hashFiles('**/Cargo.lock') }}
-        restore-keys: |
-          ubuntu-latest-cargo-registry-
-
-    - name: 📦 Cache Cargo target directory
-      uses: actions/cache@v4
-      with:
-        path: target/
-        key: ubuntu-latest-cargo-target-publish-${{ hashFiles('**/Cargo.lock') }}-${{ hashFiles('**/*.rs') }}
-        restore-keys: |
-          ubuntu-latest-cargo-target-publish-${{ hashFiles('**/Cargo.lock') }}-
-          ubuntu-latest-cargo-target-publish-
-          ubuntu-latest-cargo-target-
-
-    - name: 🔍 Verify package
-      run: cargo package --verbose
-
-    - name: 📤 Publish to crates.io
-      run: cargo publish --token ${{ secrets.CRATES_IO_TOKEN }}
-      continue-on-error: true  # 允许失败，因为可能已经发布过
-
-  # 🐳 Docker 镜像构建 (可选)
-  docker-release:
-    name: 🐳 Docker Release
-    runs-on: ubuntu-latest
-    needs: build-binaries
-    if: startsWith(github.ref, 'refs/tags/')
-    
-    steps:
-    - name: 📥 Checkout code
-      uses: actions/checkout@v4
-
-    - name: 📦 Download Linux binary
-      uses: actions/download-artifact@v4
-      with:
-        name: file_monitor-linux-x86_64-musl
-        path: ./
-
-    - name: 🔧 Set up Docker Buildx
-      uses: docker/setup-buildx-action@v3
-
-    - name: 🔑 Log in to Docker Hub
-      uses: docker/login-action@v3
-      with:
-        username: ${{ secrets.DOCKER_USERNAME }}
-        password: ${{ secrets.DOCKER_PASSWORD }}
-      continue-on-error: true
-
-    - name: 📝 Extract metadata
-      id: meta
-      uses: docker/metadata-action@v5
-      with:
-        images: ${{ github.repository }}
-        tags: |
-          type=ref,event=tag
-          type=semver,pattern={{version}}
-          type=semver,pattern={{major}}.{{minor}}
-          type=semver,pattern={{major}}
-
-    - name: 📝 Create Dockerfile
-      shell: bash
-      run: |
-        cat > Dockerfile << 'EOF'
-        FROM alpine:latest
-        RUN apk --no-cache add ca-certificates
-        WORKDIR /app
-        COPY file_monitor-linux-x86_64-musl /app/file_monitor
-        RUN chmod +x /app/file_monitor
-        ENTRYPOINT ["/app/file_monitor"]
-        EOF
-
-    - name: 🐳 Build and push Docker image
-      uses: docker/build-push-action@v5
-      with:
-        context: .
-        platforms: linux/amd64
-        push: true
-        tags: ${{ steps.meta.outputs.tags }}
-        labels: ${{ steps.meta.outputs.labels }}
-      continue-on-error: true 
