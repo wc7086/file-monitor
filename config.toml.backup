@@ -1,7 +1,7 @@
 # 文件监控配置
 [monitor]
 # 监控的根目录路径
-root_path = "/var/folders/dk/p5px21zd3h5cpff25360wnx80000gn/T/.tmpObvd2Z"
+root_path = "/var/folders/dk/p5px21zd3h5cpff25360wnx80000gn/T/.tmpUWBBKH"
 # 检查新文件的时间范围（小时）
 check_hours = 3
 # 扫描间隔（秒）

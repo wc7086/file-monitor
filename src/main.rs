@@ -472,28 +472,24 @@ async fn check_subdirectories_async(
     // 确定并行模式
     let parallel_mode = config
         .monitor
-        .parallel_mode
-        .as_ref()
-        .map(|s| s.as_str())
+        .parallel_mode.as_deref()
         .unwrap_or("sync");
 
     let max_tasks = config
         .monitor
         .max_parallel_tasks
-        .unwrap_or_else(|| num_cpus::get());
+        .unwrap_or_else(num_cpus::get);
 
     debug!("使用并行模式: {}, 最大任务数: {}", parallel_mode, max_tasks);
 
     // 收集所有子目录
     let mut directories = Vec::new();
     if let Ok(entries) = fs::read_dir(root_path) {
-        for entry in entries {
-            if let Ok(entry) = entry {
-                let path = entry.path();
-                if path.is_dir() {
-                    if let Some(dir_name) = path.file_name().and_then(|n| n.to_str()) {
-                        directories.push((dir_name.to_string(), path));
-                    }
+        for entry in entries.flatten() {
+            let path = entry.path();
+            if path.is_dir() {
+                if let Some(dir_name) = path.file_name().and_then(|n| n.to_str()) {
+                    directories.push((dir_name.to_string(), path));
                 }
             }
         }
@@ -508,7 +504,6 @@ async fn check_subdirectories_async(
             let tasks: Vec<_> = directories
                 .into_iter()
                 .map(|(dir_name, path)| {
-                    let threshold_time = threshold_time;
                     let max_depth = config.monitor.max_depth;
                     let follow_links = config.monitor.follow_links;
                     let time_type = config.monitor.time_type.clone();
@@ -529,10 +524,8 @@ async fn check_subdirectories_async(
                 .collect();
 
             let results = join_all(tasks).await;
-            for task_result in results {
-                if let Ok((dir_name, has_recent)) = task_result {
-                    status_map.insert(dir_name, has_recent);
-                }
+            for (dir_name, has_recent) in results.into_iter().flatten() {
+                status_map.insert(dir_name, has_recent);
             }
         }
         "parallel" => {
@@ -610,37 +603,35 @@ fn has_recent_files_recursive(
         .unwrap_or("modified")
         == "modified";
 
-    for entry in walker.into_iter() {
-        if let Ok(entry) = entry {
-            let path = entry.path();
-            if path.is_file() {
-                if let Ok(metadata) = fs::metadata(path) {
-                    let time_result = if use_modified {
-                        metadata.modified()
-                    } else {
-                        metadata.created()
-                    };
+    for entry in walker.into_iter().flatten() {
+        let path = entry.path();
+        if path.is_file() {
+            if let Ok(metadata) = fs::metadata(path) {
+                let time_result = if use_modified {
+                    metadata.modified()
+                } else {
+                    metadata.created()
+                };
 
-                    match time_result {
-                        Ok(time) => {
-                            let file_time: DateTime<Local> = time.into();
-                            if file_time > threshold_time {
-                                return Ok(true);
-                            }
-                        }
-                        Err(e) => {
-                            let time_name = if use_modified {
-                                "修改时间"
-                            } else {
-                                "创建时间"
-                            };
-                            warn!("无法获取文件{} '{}': {}", time_name, path.display(), e);
-                            // 继续处理其他文件，不因单个文件错误而中断
+                match time_result {
+                    Ok(time) => {
+                        let file_time: DateTime<Local> = time.into();
+                        if file_time > threshold_time {
+                            return Ok(true);
                         }
                     }
-                } else {
-                    warn!("无法获取文件元数据 '{}'", path.display());
+                    Err(e) => {
+                        let time_name = if use_modified {
+                            "修改时间"
+                        } else {
+                            "创建时间"
+                        };
+                        warn!("无法获取文件{} '{}': {}", time_name, path.display(), e);
+                        // 继续处理其他文件，不因单个文件错误而中断
+                    }
                 }
+            } else {
+                warn!("无法获取文件元数据 '{}'", path.display());
             }
         }
     }

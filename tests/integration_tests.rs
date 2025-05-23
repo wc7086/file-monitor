@@ -62,7 +62,7 @@ not_recording_message = "未录制"
 
     // 运行程序
     let output = Command::new("cargo")
-        .args(&[
+        .args([
             "run",
             "--",
             "--config",
@@ -110,7 +110,7 @@ not_recording_message = "未录制"
         fs::write(&config_path, config_content).expect("Failed to write config");
 
         let output = Command::new("cargo")
-            .args(&[
+            .args([
                 "run",
                 "--",
                 "--config",
@@ -118,7 +118,7 @@ not_recording_message = "未录制"
                 "--once",
             ])
             .output()
-            .expect(&format!("Failed to run program with mode {}", mode));
+            .unwrap_or_else(|_| panic!("Failed to run program with mode {}", mode));
 
         assert!(output.status.success(), "Failed with mode: {}", mode);
 
@@ -178,7 +178,7 @@ not_recording_message = "未录制"
         fs::write(&config_path, config_content).expect("Failed to write config");
 
         let output = Command::new("cargo")
-            .args(&[
+            .args([
                 "run",
                 "--",
                 "--config",
@@ -201,7 +201,7 @@ fn test_non_interactive_mode() {
 
     // 测试非交互模式
     let output = Command::new("cargo")
-        .args(&[
+        .args([
             "run",
             "--",
             "--non-interactive",
@@ -233,7 +233,7 @@ check_hours = "invalid"
     fs::write(&config_path, invalid_config).expect("Failed to write invalid config");
 
     let _output = Command::new("cargo")
-        .args(&[
+        .args([
             "run",
             "--",
             "--config",
@@ -278,7 +278,7 @@ not_recording_message = "未录制"
         fs::write(&config_path, config_content).expect("Failed to write config");
 
         let output = Command::new("cargo")
-            .args(&[
+            .args([
                 "run",
                 "--",
                 "--config",
@@ -286,10 +286,7 @@ not_recording_message = "未录制"
                 "--once",
             ])
             .output()
-            .expect(&format!(
-                "Failed to run program with time_type {}",
-                time_type
-            ));
+            .unwrap_or_else(|_| panic!("Failed to run program with time_type {}", time_type));
 
         assert!(
             output.status.success(),
