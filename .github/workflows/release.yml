@@ -551,3 +551,24 @@ jobs:
         # 运行一次检查
         ./file_monitor --once
         ```
+        
+        ### 🔧 配置文件
+        程序首次运行时会自动创建 `config.toml` 配置文件，可自定义监控参数。
+        
+        ---
+        **完整更新日志**: [CHANGELOG.md](https://github.com/${{ github.repository }}/blob/main/CHANGELOG.md)
+        EOF
+
+    - name: 🚀 Create GitHub Release
+      uses: softprops/action-gh-release@v1
+      with:
+        name: "File Monitor ${{ steps.version.outputs.version }}"
+        body_path: release_notes.md
+        files: |
+          release/*.tar.gz
+          release/*.zip
+          release/checksums.txt
+        draft: false
+        prerelease: ${{ contains(steps.version.outputs.version, 'alpha') || contains(steps.version.outputs.version, 'beta') || contains(steps.version.outputs.version, 'rc') }}
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
