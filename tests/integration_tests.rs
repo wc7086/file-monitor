@@ -41,6 +41,9 @@ fn test_basic_functionality() {
     // 创建测试目录结构
     create_test_structure(test_path).expect("Failed to create test structure");
 
+    // 将路径转换为TOML兼容格式（使用正斜杠，Windows也支持）
+    let safe_path = test_path.display().to_string().replace('\\', "/");
+
     // 创建配置文件
     let config_content = format!(
         r#"
@@ -54,7 +57,7 @@ parallel_mode = "sync"
 recording_message = "正在录制"
 not_recording_message = "未录制"
 "#,
-        test_path.display()
+        safe_path
     );
 
     let config_path = test_path.join("test_config.toml");
@@ -104,6 +107,9 @@ fn test_parallel_modes() {
 
     create_test_structure(test_path).expect("Failed to create test structure");
 
+    // 将路径转换为TOML兼容格式
+    let safe_path = test_path.display().to_string().replace('\\', "/");
+
     // 测试不同的并行模式
     let modes = vec!["sync", "async", "parallel"];
 
@@ -121,7 +127,7 @@ max_parallel_tasks = 2
 recording_message = "正在录制"
 not_recording_message = "未录制"
 "#,
-            test_path.display(),
+            safe_path,
             mode
         );
 
@@ -181,6 +187,9 @@ fn test_deep_directory_structure() {
         }
     }
 
+    // 将路径转换为TOML兼容格式
+    let safe_path = test_path.display().to_string().replace('\\', "/");
+
     // 测试不同的最大深度设置
     let depths = vec![None, Some(3), Some(5), Some(10)];
 
@@ -197,7 +206,7 @@ scan_interval = 60
 recording_message = "正在录制"
 not_recording_message = "未录制"
 "#,
-            test_path.display(),
+            safe_path,
             if let Some(d) = depth {
                 format!("max_depth = {}", d)
             } else {
@@ -302,6 +311,9 @@ fn test_time_type_options() {
 
     create_test_structure(test_path).expect("Failed to create test structure");
 
+    // 将路径转换为TOML兼容格式
+    let safe_path = test_path.display().to_string().replace('\\', "/");
+
     // 测试不同的时间戳类型
     let time_types = vec!["modified", "created"];
 
@@ -318,7 +330,7 @@ time_type = "{}"
 recording_message = "正在录制"
 not_recording_message = "未录制"
 "#,
-            test_path.display(),
+            safe_path,
             time_type
         );
 
