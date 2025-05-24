@@ -502,7 +502,7 @@ async fn check_subdirectories_async(
                     let dir_created = fs::metadata(&path)
                         .and_then(|meta| meta.created())
                         .unwrap_or(std::time::UNIX_EPOCH);
-                    
+
                     directories_with_time.push((dir_name.to_string(), path, dir_created));
                 }
             }
@@ -511,23 +511,29 @@ async fn check_subdirectories_async(
 
     // 根据配置决定是否只检查最新目录
     let check_only_latest = config.monitor.check_only_latest_dir.unwrap_or(true);
-    
+
     let directories = if check_only_latest && !directories_with_time.is_empty() {
         // 按创建时间排序，最新的在前
         directories_with_time.sort_by(|a, b| b.2.cmp(&a.2));
-        
+
         // 只保留最新的目录
         let latest_dir = &directories_with_time[0];
-        
+
         info!("只检查最新目录: {} (启用优化模式)", latest_dir.0);
-        
+
         // 转换为原来的格式，去掉时间戳
         vec![(latest_dir.0.clone(), latest_dir.1.clone())]
     } else {
-        info!("检查所有 {} 个目录 (完整扫描模式)", directories_with_time.len());
-        
+        info!(
+            "检查所有 {} 个目录 (完整扫描模式)",
+            directories_with_time.len()
+        );
+
         // 转换为原来的格式，去掉时间戳
-        directories_with_time.into_iter().map(|(name, path, _)| (name, path)).collect()
+        directories_with_time
+            .into_iter()
+            .map(|(name, path, _)| (name, path))
+            .collect()
     };
 
     let scan_start = Instant::now();
