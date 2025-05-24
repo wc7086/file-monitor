@@ -50,6 +50,7 @@ struct MonitorConfig {
     time_type: Option<String>,
     parallel_mode: Option<String>,
     max_parallel_tasks: Option<usize>,
+    search_latest_subdir_only: Option<bool>,
 }
 
 #[derive(Deserialize, Debug)]
@@ -269,6 +270,9 @@ scan_interval = {}
 # 最大并行任务数（可选，默认CPU核心数）
 # 设置具体数值可限制并行任务数，例如: max_parallel_tasks = 4
 {}
+# 是否只搜索最新子目录（可选，默认false）
+# 启用此选项可大大节省扫描时间，但只会检查最新修改的子目录
+{}
 
 [output]
 # 有新文件时的提示信息
@@ -303,6 +307,11 @@ not_recording_message = "{}"
             format!("max_parallel_tasks = {}", max_parallel_tasks)
         } else {
             "# max_parallel_tasks = 4".to_string()
+        },
+        if let Some(search_latest) = config.monitor.search_latest_subdir_only {
+            format!("search_latest_subdir_only = {}", search_latest)
+        } else {
+            "# search_latest_subdir_only = true".to_string()
         },
         config.output.recording_message,
         config.output.not_recording_message
@@ -372,6 +381,9 @@ scan_interval = 60
 # 最大并行任务数（可选，默认CPU核心数）
 # 设置具体数值可限制并行任务数，例如: max_parallel_tasks = 4
 # max_parallel_tasks = 4
+# 是否只搜索最新子目录（可选，默认false）
+# 启用此选项可大大节省扫描时间，但只会检查最新修改的子目录
+# search_latest_subdir_only = true
 
 [output]
 # 有新文件时的提示信息
@@ -510,6 +522,7 @@ async fn check_subdirectories_async(
                     let max_depth = config.monitor.max_depth;
                     let follow_links = config.monitor.follow_links;
                     let time_type = config.monitor.time_type.clone();
+                    let search_latest_subdir_only = config.monitor.search_latest_subdir_only;
 
                     task::spawn(async move {
                         let has_recent = has_recent_files_async(
@@ -518,6 +531,7 @@ async fn check_subdirectories_async(
                             max_depth,
                             follow_links,
                             &time_type,
+                            search_latest_subdir_only,
                         )
                         .await
                         .unwrap_or(false);
@@ -543,6 +557,7 @@ async fn check_subdirectories_async(
                         config.monitor.max_depth,
                         config.monitor.follow_links,
                         &config.monitor.time_type,
+                        config.monitor.search_latest_subdir_only,
                     )
                     .unwrap_or(false);
                     (dir_name.clone(), has_recent)
@@ -563,6 +578,7 @@ async fn check_subdirectories_async(
                     config.monitor.max_depth,
                     config.monitor.follow_links,
                     &config.monitor.time_type,
+                    config.monitor.search_latest_subdir_only,
                 )?;
                 status_map.insert(dir_name, has_recent_files);
             }
@@ -585,7 +601,28 @@ fn has_recent_files_recursive(
     max_depth: Option<usize>,
     follow_links: Option<bool>,
     time_type: &Option<String>,
+    search_latest_subdir_only: Option<bool>,
 ) -> Result<bool> {
+    // 确定使用的时间戳类型，默认为modified
+    let use_modified = time_type
+        .as_ref()
+        .map(|t| t.to_lowercase())
+        .as_deref()
+        .unwrap_or("modified")
+        == "modified";
+
+    // 如果启用了只搜索最新子目录的选项
+    if search_latest_subdir_only.unwrap_or(false) {
+        return search_in_latest_subdir_only(
+            dir_path,
+            threshold_time,
+            max_depth,
+            follow_links,
+            use_modified,
+        );
+    }
+
+    // 原有的完整搜索逻辑
     let mut walker = WalkDir::new(dir_path);
 
     // 如果设置了最大深度，则应用限制
@@ -597,14 +634,6 @@ fn has_recent_files_recursive(
     if let Some(follow) = follow_links {
         walker = walker.follow_links(follow);
     }
-
-    // 确定使用的时间戳类型，默认为modified
-    let use_modified = time_type
-        .as_ref()
-        .map(|t| t.to_lowercase())
-        .as_deref()
-        .unwrap_or("modified")
-        == "modified";
 
     for entry in walker.into_iter().flatten() {
         let path = entry.path();
@@ -641,12 +670,146 @@ fn has_recent_files_recursive(
     Ok(false)
 }
 
+fn search_in_latest_subdir_only(
+    dir_path: &Path,
+    threshold_time: DateTime<Local>,
+    max_depth: Option<usize>,
+    follow_links: Option<bool>,
+    use_modified: bool,
+) -> Result<bool> {
+    // 首先检查当前目录中的直接文件
+    if let Ok(entries) = fs::read_dir(dir_path) {
+        for entry in entries.flatten() {
+            let path = entry.path();
+            if path.is_file() {
+                if let Ok(metadata) = fs::metadata(&path) {
+                    let time_result = if use_modified {
+                        metadata.modified()
+                    } else {
+                        metadata.created()
+                    };
+
+                    if let Ok(time) = time_result {
+                        let file_time: DateTime<Local> = time.into();
+                        if file_time > threshold_time {
+                            debug!("在当前目录找到新文件: {}", path.display());
+                            return Ok(true);
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    // 如果当前目录没有新文件，找到最新的子目录
+    let latest_subdir = find_latest_subdir(dir_path, use_modified)?;
+    
+    if let Some(latest_dir) = latest_subdir {
+        debug!("搜索最新子目录: {}", latest_dir.display());
+        
+        // 在最新子目录中递归搜索
+        let mut walker = WalkDir::new(&latest_dir);
+        
+        // 如果设置了最大深度，需要减1（因为我们已经进入了一层子目录）
+        if let Some(depth) = max_depth {
+            if depth > 1 {
+                walker = walker.max_depth(depth - 1);
+            } else {
+                walker = walker.max_depth(1);
+            }
+        }
+
+        // 如果设置了跟随符号链接，则应用设置
+        if let Some(follow) = follow_links {
+            walker = walker.follow_links(follow);
+        }
+
+        for entry in walker.into_iter().flatten() {
+            let path = entry.path();
+            if path.is_file() {
+                if let Ok(metadata) = fs::metadata(path) {
+                    let time_result = if use_modified {
+                        metadata.modified()
+                    } else {
+                        metadata.created()
+                    };
+
+                    match time_result {
+                        Ok(time) => {
+                            let file_time: DateTime<Local> = time.into();
+                            if file_time > threshold_time {
+                                debug!("在最新子目录中找到新文件: {}", path.display());
+                                return Ok(true);
+                            }
+                        }
+                        Err(e) => {
+                            let time_name = if use_modified {
+                                "修改时间"
+                            } else {
+                                "创建时间"
+                            };
+                            warn!("无法获取文件{} '{}': {}", time_name, path.display(), e);
+                        }
+                    }
+                } else {
+                    warn!("无法获取文件元数据 '{}'", path.display());
+                }
+            }
+        }
+    } else {
+        debug!("未找到子目录: {}", dir_path.display());
+    }
+
+    Ok(false)
+}
+
+fn find_latest_subdir(dir_path: &Path, use_modified: bool) -> Result<Option<std::path::PathBuf>> {
+    let mut latest_dir: Option<std::path::PathBuf> = None;
+    let mut latest_time: Option<DateTime<Local>> = None;
+
+    if let Ok(entries) = fs::read_dir(dir_path) {
+        for entry in entries.flatten() {
+            let path = entry.path();
+            if path.is_dir() {
+                if let Ok(metadata) = fs::metadata(&path) {
+                    let time_result = if use_modified {
+                        metadata.modified()
+                    } else {
+                        metadata.created()
+                    };
+
+                    if let Ok(time) = time_result {
+                        let dir_time: DateTime<Local> = time.into();
+                        
+                        if latest_time.is_none() || dir_time > latest_time.unwrap() {
+                            latest_time = Some(dir_time);
+                            latest_dir = Some(path);
+                        }
+                    } else {
+                        let time_name = if use_modified {
+                            "修改时间"
+                        } else {
+                            "创建时间"
+                        };
+                        warn!("无法获取目录{} '{}': {}", time_name, path.display(), time_result.unwrap_err());
+                    }
+                } else {
+                    warn!("无法获取目录元数据 '{}'", path.display());
+                }
+            }
+        }
+    }
+
+    Ok(latest_dir)
+}
+
 async fn has_recent_files_async(
     dir_path: &Path,
     threshold_time: DateTime<Local>,
     max_depth: Option<usize>,
     follow_links: Option<bool>,
     time_type: &Option<String>,
+    search_latest_subdir_only: Option<bool>,
 ) -> Result<bool> {
     // 在异步上下文中，我们将文件扫描任务放到阻塞线程池中执行
     let dir_path = dir_path.to_path_buf();
@@ -659,6 +822,7 @@ async fn has_recent_files_async(
             max_depth,
             follow_links,
             &time_type,
+            search_latest_subdir_only,
         )
     })
     .await;
