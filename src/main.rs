@@ -50,6 +50,8 @@ struct MonitorConfig {
     time_type: Option<String>,
     parallel_mode: Option<String>,
     max_parallel_tasks: Option<usize>,
+    /// 是否只检查最新创建的目录（默认: true）
+    check_only_latest_dir: Option<bool>,
 }
 
 #[derive(Deserialize, Debug)]
@@ -372,6 +374,10 @@ scan_interval = 60
 # 最大并行任务数（可选，默认CPU核心数）
 # 设置具体数值可限制并行任务数，例如: max_parallel_tasks = 4
 # max_parallel_tasks = 4
+# 是否只检查最新创建的目录（优化性能，默认true）
+# true: 只检查最新创建的目录，大幅提升性能
+# false: 检查所有目录，完整扫描模式
+check_only_latest_dir = true
 
 [output]
 # 有新文件时的提示信息
@@ -485,18 +491,44 @@ async fn check_subdirectories_async(
 
     debug!("使用并行模式: {}, 最大任务数: {}", parallel_mode, max_tasks);
 
-    // 收集所有子目录
-    let mut directories = Vec::new();
+    // 收集所有子目录（包含创建时间）
+    let mut directories_with_time = Vec::new();
     if let Ok(entries) = fs::read_dir(root_path) {
         for entry in entries.flatten() {
             let path = entry.path();
             if path.is_dir() {
                 if let Some(dir_name) = path.file_name().and_then(|n| n.to_str()) {
-                    directories.push((dir_name.to_string(), path));
+                    // 获取目录创建时间
+                    let dir_created = fs::metadata(&path)
+                        .and_then(|meta| meta.created())
+                        .unwrap_or(std::time::UNIX_EPOCH);
+                    
+                    directories_with_time.push((dir_name.to_string(), path, dir_created));
                 }
             }
         }
     }
+
+    // 根据配置决定是否只检查最新目录
+    let check_only_latest = config.monitor.check_only_latest_dir.unwrap_or(true);
+    
+    let directories = if check_only_latest && !directories_with_time.is_empty() {
+        // 按创建时间排序，最新的在前
+        directories_with_time.sort_by(|a, b| b.2.cmp(&a.2));
+        
+        // 只保留最新的目录
+        let latest_dir = &directories_with_time[0];
+        
+        info!("只检查最新目录: {} (启用优化模式)", latest_dir.0);
+        
+        // 转换为原来的格式，去掉时间戳
+        vec![(latest_dir.0.clone(), latest_dir.1.clone())]
+    } else {
+        info!("检查所有 {} 个目录 (完整扫描模式)", directories_with_time.len());
+        
+        // 转换为原来的格式，去掉时间戳
+        directories_with_time.into_iter().map(|(name, path, _)| (name, path)).collect()
+    };
 
     let scan_start = Instant::now();
 
