@@ -393,7 +393,7 @@ scan_interval = 3600
 # sync: 同步模式，等待所有任务完成
 # async: 异步模式，不等待任务完成
 # parallel: 并行模式，同时执行多个任务
-parallel_mode = "parallel"
+parallel_mode = "async"
 # 最大并行任务数（可选，默认CPU核心数）
 # 设置具体数值可限制并行任务数，例如: max_parallel_tasks = 4
 # max_parallel_tasks = 4
@@ -402,7 +402,7 @@ parallel_mode = "parallel"
 search_latest_subdir_only = true
 # 性能优化选项（不影响精确度）
 use_async_io = true
-batch_size = 180
+batch_size = 100
 
 [output]
 # 有新文件时的提示信息
@@ -746,13 +746,13 @@ fn search_in_latest_subdir_only_optimized(
 
     // 找到最新的子目录
     let latest_subdir = find_latest_subdir(dir_path, use_modified)?;
-    
+
     if let Some(latest_dir) = latest_subdir {
         debug!("搜索最新子目录: {}", latest_dir.display());
-        
+
         // 构建目录遍历器
         let mut walker = WalkDir::new(&latest_dir);
-        
+
         // 如果设置了最大深度，需要减1（因为我们已经进入了一层子目录）
         if let Some(depth) = max_depth {
             if depth > 1 {
@@ -869,11 +869,11 @@ fn check_files_in_batches(
     batch_size: usize,
 ) -> Result<bool> {
     let mut file_batch = Vec::new();
-    
+
     for entry in walker.into_iter().flatten() {
         if entry.path().is_file() {
             file_batch.push(entry);
-            
+
             // 当达到批处理大小时，处理这一批文件
             if file_batch.len() >= batch_size {
                 debug!("处理文件批次，大小: {}", file_batch.len());
@@ -884,7 +884,7 @@ fn check_files_in_batches(
             }
         }
     }
-    
+
     // 处理最后不满一批的文件
     if !file_batch.is_empty() {
         debug!("处理最后的文件批次，大小: {}", file_batch.len());
@@ -892,7 +892,7 @@ fn check_files_in_batches(
             return Ok(true);
         }
     }
-    
+
     Ok(false)
 }
 
@@ -913,7 +913,7 @@ fn find_latest_subdir(dir_path: &Path, use_modified: bool) -> Result<Option<std:
 
                     if let Ok(time) = time_result {
                         let dir_time: DateTime<Local> = time.into();
-                        
+
                         if latest_time.is_none() || dir_time > latest_time.unwrap() {
                             latest_time = Some(dir_time);
                             latest_dir = Some(path);
@@ -924,7 +924,12 @@ fn find_latest_subdir(dir_path: &Path, use_modified: bool) -> Result<Option<std:
                         } else {
                             "创建时间"
                         };
-                        warn!("无法获取目录{} '{}': {}", time_name, path.display(), time_result.unwrap_err());
+                        warn!(
+                            "无法获取目录{} '{}': {}",
+                            time_name,
+                            path.display(),
+                            time_result.unwrap_err()
+                        );
                     }
                 } else {
                     warn!("无法获取目录元数据 '{}'", path.display());
