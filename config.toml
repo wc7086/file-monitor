@@ -1,30 +1,36 @@
 # 文件监控配置
 [monitor]
 # 监控的根目录路径
-root_path = "/var/folders/dk/p5px21zd3h5cpff25360wnx80000gn/T/.tmpHF0Wly"
+root_path = "."
 # 检查新文件的时间范围（小时）
-check_hours = 3
+check_hours = 2
 # 扫描间隔（秒）
-scan_interval = 60
+scan_interval = 3600
 # 最大扫描深度（可选）
 # 注释掉或删除此行表示无限制深度
 # 设置具体数值可限制扫描深度，例如: max_depth = 10
-# max_depth = 10
+max_depth = 10
 # 是否跟随符号链接（可选，默认false）
 # 启用此选项会跟随符号链接到其目标位置
-# follow_links = true
+follow_links = false
 # 时间戳类型（可选，默认modified）
 # modified: 使用文件修改时间（跨平台兼容性更好）
 # created: 使用文件创建时间（Windows上更准确，但Linux可能不支持）
-# time_type = "created"
+time_type = "modified"
 # 并行模式（可选，默认sync）
 # sync: 同步模式，等待所有任务完成
 # async: 异步模式，不等待任务完成
 # parallel: 并行模式，同时执行多个任务
-parallel_mode = "sync"
+parallel_mode = "async"
 # 最大并行任务数（可选，默认CPU核心数）
 # 设置具体数值可限制并行任务数，例如: max_parallel_tasks = 4
-max_parallel_tasks = 4
+max_parallel_tasks = 2
+# 是否只搜索最新子目录（可选，默认false）
+# 启用此选项可大大节省扫描时间，但只会检查最新修改的子目录
+search_latest_subdir_only = true
+# 性能优化选项（不影响精确度）
+use_async_io = true
+batch_size = 100
 
 [output]
 # 有新文件时的提示信息

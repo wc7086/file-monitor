@@ -375,9 +375,9 @@ fn create_default_config_safely(config_path: &str, monitor_path: &str) -> Result
 # 监控的根目录路径
 root_path = "{}"
 # 检查新文件的时间范围（小时）
-check_hours = 3
+check_hours = 2
 # 扫描间隔（秒）
-scan_interval = 60
+scan_interval = 3600
 # 最大扫描深度（可选）
 # 注释掉或删除此行表示无限制深度
 # 设置具体数值可限制扫描深度，例如: max_depth = 10
@@ -393,16 +393,16 @@ scan_interval = 60
 # sync: 同步模式，等待所有任务完成
 # async: 异步模式，不等待任务完成
 # parallel: 并行模式，同时执行多个任务
-# parallel_mode = "sync"
+parallel_mode = "parallel"
 # 最大并行任务数（可选，默认CPU核心数）
 # 设置具体数值可限制并行任务数，例如: max_parallel_tasks = 4
 # max_parallel_tasks = 4
 # 是否只搜索最新子目录（可选，默认false）
 # 启用此选项可大大节省扫描时间，但只会检查最新修改的子目录
-# search_latest_subdir_only = true
+search_latest_subdir_only = true
 # 性能优化选项（不影响精确度）
-use_async_io = false
-batch_size = 1000
+use_async_io = true
+batch_size = 180
 
 [output]
 # 有新文件时的提示信息
@@ -543,6 +543,7 @@ async fn check_subdirectories_async(
                     let time_type = config.monitor.time_type.clone();
                     let search_latest_subdir_only = config.monitor.search_latest_subdir_only;
                     let use_async_io = config.monitor.use_async_io;
+                    let batch_size = config.monitor.batch_size;
 
                     task::spawn(async move {
                         let has_recent = task::spawn_blocking(move || {
@@ -554,6 +555,7 @@ async fn check_subdirectories_async(
                                 &time_type,
                                 search_latest_subdir_only,
                                 use_async_io.unwrap_or(false),
+                                batch_size,
                             )
                         })
                         .await
@@ -583,6 +585,7 @@ async fn check_subdirectories_async(
                         &config.monitor.time_type,
                         config.monitor.search_latest_subdir_only,
                         config.monitor.use_async_io.unwrap_or(false),
+                        config.monitor.batch_size,
                     )
                     .unwrap_or(false);
                     (dir_name.clone(), has_recent)
@@ -605,6 +608,7 @@ async fn check_subdirectories_async(
                     &config.monitor.time_type,
                     config.monitor.search_latest_subdir_only,
                     config.monitor.use_async_io.unwrap_or(false),
+                    config.monitor.batch_size,
                 )?;
                 status_map.insert(dir_name, has_recent_files);
             }
@@ -629,6 +633,7 @@ fn has_recent_files_optimized(
     time_type: &Option<String>,
     search_latest_subdir_only: Option<bool>,
     use_async_io: bool,
+    batch_size: Option<usize>,
 ) -> Result<bool> {
     // 确定使用的时间戳类型，默认为modified
     let use_modified = time_type
@@ -646,6 +651,7 @@ fn has_recent_files_optimized(
             max_depth,
             follow_links,
             use_modified,
+            batch_size,
         );
     }
 
@@ -657,10 +663,11 @@ fn has_recent_files_optimized(
             max_depth,
             follow_links,
             use_modified,
+            batch_size,
         );
     }
 
-    // 回退到原有逻辑
+    // 回退到原有逻辑（使用批处理优化）
     let mut walker = WalkDir::new(dir_path);
 
     if let Some(depth) = max_depth {
@@ -671,6 +678,12 @@ fn has_recent_files_optimized(
         walker = walker.follow_links(follow);
     }
 
+    // 如果设置了批处理，则使用批处理方式
+    if let Some(batch_size) = batch_size {
+        return check_files_in_batches(walker, threshold_time, use_modified, batch_size);
+    }
+
+    // 原有的逐一检查方式
     for entry in walker.into_iter().flatten() {
         let path = entry.path();
         if path.is_file() {
@@ -712,6 +725,7 @@ fn search_in_latest_subdir_only_optimized(
     max_depth: Option<usize>,
     follow_links: Option<bool>,
     use_modified: bool,
+    batch_size: Option<usize>,
 ) -> Result<bool> {
     // 首先快速检查当前目录时间
     if let Ok(metadata) = fs::metadata(dir_path) {
@@ -736,7 +750,7 @@ fn search_in_latest_subdir_only_optimized(
     if let Some(latest_dir) = latest_subdir {
         debug!("搜索最新子目录: {}", latest_dir.display());
         
-        // 否则进行更详细的搜索
+        // 构建目录遍历器
         let mut walker = WalkDir::new(&latest_dir);
         
         // 如果设置了最大深度，需要减1（因为我们已经进入了一层子目录）
@@ -753,6 +767,12 @@ fn search_in_latest_subdir_only_optimized(
             walker = walker.follow_links(follow);
         }
 
+        // 如果设置了批处理大小，使用批处理方式
+        if let Some(batch_size) = batch_size {
+            return check_files_in_batches(walker, threshold_time, use_modified, batch_size);
+        }
+
+        // 否则使用原有的逐一检查方式
         for entry in walker.into_iter().flatten() {
             let path = entry.path();
             if path.is_file() {
@@ -786,9 +806,8 @@ fn has_recent_files_async_io(
     max_depth: Option<usize>,
     follow_links: Option<bool>,
     use_modified: bool,
+    batch_size: Option<usize>,
 ) -> Result<bool> {
-    // 批量处理文件，减少系统调用
-    let mut files_to_check = Vec::new();
     let mut walker = WalkDir::new(dir_path);
 
     if let Some(depth) = max_depth {
@@ -799,7 +818,13 @@ fn has_recent_files_async_io(
         walker = walker.follow_links(follow);
     }
 
-    // 批量收集文件路径
+    // 如果设置了批处理大小，使用批处理方式
+    if let Some(batch_size) = batch_size {
+        return check_files_in_batches(walker, threshold_time, use_modified, batch_size);
+    }
+
+    // 否则批量收集所有文件然后一次性检查
+    let mut files_to_check = Vec::new();
     for entry in walker.into_iter().flatten() {
         if entry.path().is_file() {
             files_to_check.push(entry);
@@ -833,6 +858,41 @@ fn check_files_batch(
             }
         }
     }
+    Ok(false)
+}
+
+// 新增：分批次检查文件
+fn check_files_in_batches(
+    walker: walkdir::WalkDir,
+    threshold_time: DateTime<Local>,
+    use_modified: bool,
+    batch_size: usize,
+) -> Result<bool> {
+    let mut file_batch = Vec::new();
+    
+    for entry in walker.into_iter().flatten() {
+        if entry.path().is_file() {
+            file_batch.push(entry);
+            
+            // 当达到批处理大小时，处理这一批文件
+            if file_batch.len() >= batch_size {
+                debug!("处理文件批次，大小: {}", file_batch.len());
+                if check_files_batch(&file_batch, threshold_time, use_modified)? {
+                    return Ok(true);
+                }
+                file_batch.clear();
+            }
+        }
+    }
+    
+    // 处理最后不满一批的文件
+    if !file_batch.is_empty() {
+        debug!("处理最后的文件批次，大小: {}", file_batch.len());
+        if check_files_batch(&file_batch, threshold_time, use_modified)? {
+            return Ok(true);
+        }
+    }
+    
     Ok(false)
 }
 
